@@ -1,0 +1,11 @@
+#+title: Final
+* Data
+- train: UserID, ItemID, Rating, Timestamp
+- test: RatingId, UserID, ItemID
+- format: sample submission with ratings 1
+* Resource
+- [[https://github.com/marufaytekin/lsh-spark][Github: Spark LSH with Scala]]
+- [[https://www.analyticsvidhya.com/blog/2018/06/comprehensive-guide-recommendation-engine-python/][analytics: Recommendation Engine from scratch (in Python)]]
+- [[https://medium.com/analytics-vidhya/crafting-recommendation-engine-in-pyspark-a7ca242ad40a][Medium: Crafting Recommendation Engine in PySpark]]
+- [[https://spark.apache.org/docs/1.1.0/mllib-data-types.html][Spark Vector]]
+- [[https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.ml.feature.MinHashLSHModel.html#pyspark.ml.feature.MinHashLSHModel.approxNearestNeighbors][Spark MinHashLSHModel]]

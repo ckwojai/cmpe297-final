@@ -1,0 +1,5 @@
+pandas
+jupyter
+scikit-learn
+pyspark
+

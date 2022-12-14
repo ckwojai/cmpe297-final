@@ -1,0 +1,191 @@
+\message{ !name(report.tex)}% THIS TEMPLATE IS A WORK IN PROGRESS
+% Adapted from an original template by faculty at Reykjavik University, Iceland
+
+\documentclass{scrartcl}
+\input{File_Setup.tex}
+\usepackage[T1]{fontenc}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+\begin{document}
+
+\message{ !name(report.tex) !offset(-3) }
+
+\lstset{language=Python}
+%Title of the report, name of coworkers and dates (of experiment and of report).
+\begin{titlepage}
+	\centering
+	\includegraphics[width=0.6\textwidth]{logo.png}\par
+	\vspace{2cm}
+	%%%% COMMENT OUT irrelevant lines among the 3 below
+	{\scshape\LARGE Computer Engineering \par}  %if you're a CS major
+	\vspace{1cm}
+	{\scshape\Large CMPE 297-02 Final Project - Fall 2022\par}
+	%{\large \today\par}
+	\vfill
+	
+	%%%% PROJECT TITLE
+	{\huge\bfseries Collaborative filtering using optimized data structures on Spark \par}
+	\vfill
+	
+	%%%% AUTHOR(S)
+	{\Large\itshape Kin Wo Chang \\ 013783848}\par
+	\vspace{1.5cm}
+
+	\vfill
+	supervised by\par
+	%%%% SUPERVISOR(S)
+	Professor Gheorghi Guzun
+
+
+	\vfill
+% Bottom of the page
+\end{titlepage}
+
+\newpage
+
+\doublespacing
+\tableofcontents
+\singlespacing
+
+\newpage
+
+\doublespacing
+
+\section{Data pre-processing and other approaches}
+
+\subsection{Basic Statistics}
+First, as shown below, I use \texttt{pandas}'s library function to read the raw dat file. With header names ``uid'', ``iid'', ``ratings'', ``ts'' in the dataframe, it makes examining the data easy. \\
+\begin{lstlisting}
+  train_raw = pd.read_csv('train.dat', header=None, names=["uid", "iid", "rating", "ts"], sep='\t', engine='python')
+\end{lstlisting}
+After simple inspection, we have a total of \textbf{85724} rating data, with \textbf{943} number of unique users and \textbf{1659} number of unique items. Ratings are integer values ranging from 1 to 5. Timestamps are given in Unix epoch time.
+
+
+\subsection{Data Transformation}
+To use our dataset in training the LSH or Matrix Decomposition model, we need to represent each user as a feature factor. That is, the item rating history of that specific user. For this purpose, I chose to transform the above dataframe into a dictionary of key \texttt{userid} to a dictionary of key \texttt{itemid} to \texttt{rating}. Code shown below.
+\begin{lstlisting}
+u2irmap = {}
+i2umap = {}
+for _, r in train_raw.iterrows():
+    uid, iid = int(r.uid), int(r.iid)
+    if uid not in u2irmap:
+        u2irmap[uid] = {}
+    u2irmap[uid][iid] = int(r.rating)
+    if iid not in i2umap:
+        i2umap[iid] = set()
+		i2umap[iid].add(uid)
+\end{lstlisting}
+To save this transformed dataset for easy and efficient access in training our model, I save it in \texttt{.json} format. Both the saving and retrieval code are shown below. Note that the \texttt{str}->\texttt{int} conversion when loading, because \texttt{json} requires string as key.
+\begin{lstlisting}
+ # Saving
+with open("all.json", "w") as outfile:
+    json.dump(u2irmap, outfile)
+# Loading
+with open("all.json", "r") as content:
+    all = json.load(content)
+u2irmap = {int(k): {int(mk): int(mv) for mk, mv in v.items()} for k, v in all.items()}
+\end{lstlisting}
+
+\subsection{Train/Validation Split}
+We split the training data into train / validation set for cross-validation. This is done on a user level and is only used in the \texttt{LSH-NN} model. $90:10$ split is done, and the resulting training set has 858 and testing set 85. The main function used in this split from \texttt{sklearn} is shown below.
+\begin{lstlisting}
+from sklearn.model_selection import train_test_split
+
+s = pd.Series(u2irmap)
+train_set, valid_set  = [i.to_dict() for i in train_test_split(s, test_size=0.1)]
+train_set = {int(k): {int(mk): int(mv) for mk, mv in v.items()} for k, v in train_set.items()}
+valid_set = {int(k): {int(mk): int(mv) for mk, mv in v.items()} for k, v in valid_set.items()}
+\end{lstlisting}
+
+Code from this section can be found in \href{pre}{preprocess.ipynb} on Github. \\
+\section{User-based LSH with Nearest Neighbor Search}
+\subsection{Prediction Algorithm}
+I chose user-based LSH over item-based because it is more straight forward. First, the LSH model is built using users feature factors to approximate nearest neighbor search. Then, given a user, user-history of item rating, and a new item, we search the closest neighbors using LSH that has rated this item before, and take the average of neighbors' ratings as the predicted for this user. \\
+The above overview may look simple, but there are a lot of nuances in the algorithm. For example,
+how do we condition the closest neighbors search returned by LSH has to have rating on the predicting item? Based on my research, I have not found a library function that provide this kind of condition on NN search. Hence, there are only two options, 1) pre-process the pool of neighbors so that they all have rated the predicting item, or 2) post-process the returned closest neighbors from LSH and only pick those that have rated the predicting item. Option 2 first seemed most plausible but soon I was bothered by the idea of picking the hyper-parameter \texttt{numNeighbors}. What if the it is set to 10, but the first 10 closest neighbors to user all haven't rated the predicting item? \\
+The above concern regarding option 2 drives me to go with the first options. Therefore, an \texttt{item} to \texttt{[user]} map is created to filter out neighbors before passing it into the main \texttt{spark MinHashLSH approxNearestNeighbors} function (line 8 and 13). Normal \texttt{spark} operations are also used such as \texttt{Vectors.sparse()} and \texttt{spark.createDataFrame()}. The referenced \texttt{predict\_rating} function is shown below.
+\begin{lstlisting}
+from pyspark.ml.linalg import Vectors
+from pyspark.ml.feature import MinHashLSH
+# expect to have:
+# maxiid, u2irmap (user-to-item-ratings map), and i2umap (item-to-users map)
+def predict_rating(itemid, userhistory, num_neighbors=10, num_hash_tables=20, max_iid=1699):
+    if itemid not in i2umap or len(userhistory) == 0: # no rating has given for this item, can't predict
+        return None
+    userDs = [(int(uid), Vectors.sparse(max_iid+1, u2irmap[uid])) for uid in u2irmap if uid in i2umap[itemid]]
+    dfUsers = spark.createDataFrame(userDs, ["uid", "features"])
+    mh = MinHashLSH(inputCol="features", outputCol="hashes", numHashTables=num_hash_tables)
+    model = mh.fit(dfUsers)
+    key = Vectors.sparse(max_iid+1, userhistory) # item_history expect to be a dict {<item>: rating}
+    rows = model.approxNearestNeighbors(dfUsers, key, num_neighbors)
+    ratings = []
+    for r in rows.collect():
+        ratings.append(u2irmap[r["uid"]][itemid])
+    return int(round(sum(ratings) / len(ratings))) if ratings else None
+\end{lstlisting}
+\subsection{Validation Algorithm}
+Another big question I had is how do I evaluate my model performance, that is, how do I pass the validation set into the model to get error metrics? The solution I came up with is, for each user's feature vector (items to rating history map), manually hold out one entry from that map. The hold out rating will be the truth rating, and passing this user and its held-out feature vector into our model will give us the predicted rating. Iterating through holding out each item and associate rating from the history map for this user will give us the error metrics for this user. The error metrics algorithm and the core idea of ``holding out rating'' is implemented in the function \texttt{get\_user\_history\_without\_item()} shown below in line 3-6.
+\begin{lstlisting}
+import time
+from math import sqrt
+def get_user_history_without_item(user_history, itemid):
+    user_history_without_item = user_history.copy()
+    user_history_without_item.pop(itemid)
+    return user_history_without_item
+rmse_total = []
+start_time = time.time()
+for index, uid in enumerate(list(vu2irmap.keys())):
+    print(f"Processing user {uid}, {index+1}/{len(vu2irmap)}")
+    user_history = vu2irmap[uid]
+    rmse_user = []
+    for iid in user_history:
+        expected = user_history[iid]
+        uh = get_user_history_without_item(user_history, iid)
+        predicted = predict_rating(iid, uh)
+        if predicted:
+            rmse_user.append((expected - predicted)**2)
+        else:
+            print(f"No predicted for user: {uid}, item: {iid}")
+    if rmse_user:
+        rmse_total.append(sqrt(sum(rmse_user) / len(rmse_user)))
+    else:
+        print(f"no rmse_user for user {uid}")
+print("--- %s seconds ---" % (time.time() - start_time))
+\end{lstlisting}
+\section{Latent Factor using Matrix Decomposition}
+Latent factors are factors that can only be indirectly inferred from other observable variables. For our use case, these factors can be the type, cost, quality of items that affects the rating given by users, which isn't exactly obvious when looking at our dataset. Extracting these latent factors can help us predict new item ratings for users. A common method for extracting latent factors is Matrix Decomposition. The broad idea is to split the adjacency matrix (in our case the user-item-rating table) into User feature matrix and Item feature matrix. This is achieved by using Stochastic Gradient Decent on minimizing the error of historic item ratings for each user (not the un-rated items). Combining these two matrix back will automatically predicts all missing / unknown item ratings stored in the resulting predicted adjacency matrix. \\
+Despite tireless effort, I couldn't get the SVD algorithm from \texttt{Spark} to work. For the interest of time, an algorithm in simple Python is used for this algorithm. Work on both ends can be found in \href{}{latent\_factor.ipynb} on Github.
+\section{Result}
+\subsection{RMSE score}
+Submitted on the CLP, the RMSE score for the LSH model is 1.0617, while the Latent Factor model scores a $1.0037$. The Latent Factor model seems to be doing better based on my limited testing, and it is hard to say which one is better after proper hyper-parameter tuning, such as \texttt{numNeighbors} and \texttt{numHashTables} in LSH model or \texttt{iteration, learning rate, and regularization params} in the Latent Factor model.
+\subsection{Training Time}
+\subsection{Prediction Time}
+
+\end{document}
+
+\message{ !name(report.tex) !offset(-191) }

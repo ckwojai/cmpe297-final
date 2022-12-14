@@ -1,0 +1,5 @@
+def plot_c(Yhat, Y, X):
+    plt.figure()
+    plt.plot(X, Y)
+    plt.plot(X, Yhat)
+    ...

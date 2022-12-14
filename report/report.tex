@@ -119,7 +119,7 @@ train_set = {int(k): {int(mk): int(mv) for mk, mv in v.items()} for k, v in trai
 valid_set = {int(k): {int(mk): int(mv) for mk, mv in v.items()} for k, v in valid_set.items()}
 \end{lstlisting}
 
-Code from this section can be found in \href{pre}{preprocess.ipynb} on Github. \\
+Code from this section can be found in \href{https://github.com/ckwojai/cmpe297-final/blob/main/preprocess.ipynb}{preprocess.ipynb} on Github. \\
 \section{User-based LSH with Nearest Neighbor Search}
 \subsection{Prediction Algorithm}
 I chose user-based LSH over item-based because it is more straight forward. First, the LSH model is built using users feature factors to approximate nearest neighbor search. Then, given a user, user-history of item rating, and a new item, we search the closest neighbors using LSH that has rated this item before, and take the average of neighbors' ratings as the predicted for this user. \\
@@ -175,9 +175,10 @@ for index, uid in enumerate(list(vu2irmap.keys())):
         print(f"no rmse_user for user {uid}")
 print("--- %s seconds ---" % (time.time() - start_time))
 \end{lstlisting}
+Code from this section can be found in \href{https://github.com/ckwojai/cmpe297-final/blob/main/lsh\_nn.ipynb}{lsh\_nn.ipynb} on Github. \\
 \section{Latent Factor using Matrix Decomposition}
 Latent factors are factors that can only be indirectly inferred from other observable variables. For our use case, these factors can be the type, cost, quality of items that affects the rating given by users, which isn't exactly obvious when looking at our dataset. Extracting these latent factors can help us predict new item ratings for users. A common method for extracting latent factors is Matrix Decomposition. The broad idea is to split the adjacency matrix (in our case the user-item-rating table) into User feature matrix and Item feature matrix. This is achieved by using Stochastic Gradient Decent on minimizing the error of historic item ratings for each user (not the un-rated items). Combining these two matrix back will automatically predicts all missing / unknown item ratings stored in the resulting predicted adjacency matrix. \\
-Despite tireless effort, I couldn't get the SVD algorithm from \texttt{Spark} to work. For the interest of time, an algorithm in simple Python is used for this algorithm. Work on both ends can be found in \href{}{latent\_factor.ipynb} on Github.
+Despite tireless effort, I couldn't get the SVD algorithm from \texttt{Spark} to work. For the interest of time, an algorithm in simple Python is used for this algorithm. Work on both ends can be found in \href{https://github.com/ckwojai/cmpe297-final/blob/main/latent_factor.ipynb}{latent\_factor.ipynb} on Github.
 \section{Results}
 \subsection{RMSE score}
 Submitted on the CLP, the RMSE score for the LSH model is $1.0617$ with hashTables=$20$ and nearNeigbhors=$10$, while the Latent Factor model scores a $1.0037$, with steps=$300$, alpha=$0.0002$, and beta=$0.02$. The Latent Factor model seems to be doing better based on my limited testing. However, it is very hard to say which one is better after proper hyper-parameter tuning, such as \texttt{numNeighbors} and \texttt{numHashTables} in LSH model or \texttt{iteration, learning rate, and regularization params} in the Latent Factor model. \\
